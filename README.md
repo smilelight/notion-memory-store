@@ -1,5 +1,7 @@
 # Notion Memory Store
 
+[中文文档](README_CN.md)
+
 Persistent cross-platform memory layer using Notion as backend. Store, recall, and manage
 AI conversation memories across Claude.ai, Claude Code, and OpenClaw.
 
