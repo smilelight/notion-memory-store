@@ -13,30 +13,19 @@ user-invocable: true
 Read the user's memories from the **Memory Store** Notion Database and use them as context
 for the current conversation.
 
-## Configuration
+## Database Discovery
 
-Before executing any steps, read the configuration file to obtain Notion IDs:
+This skill uses a **zero-config convention**: the database is always named **"Memory Store"**.
+No configuration files or environment variables are needed.
 
-**Config path**: `~/.config/memory-store/config.json`
+**Discovery flow (execute at Step 1):**
 
-Use the Read tool to read `~/.config/memory-store/config.json`. The file contains:
-
-```json
-{
-  "notion": {
-    "data_source_id": "<data_source_id>",
-    "database_url": "<database_url>"
-  }
-}
-```
-
-Extract `data_source_id` and `database_url` from the config. Use these values wherever
-this document references `<data_source_id>` or `<database_url>`.
-
-**If the config file does not exist or is unreadable**, tell the user:
-"Memory Store is not configured yet. Please run `/setup-memory-store` first to create the
-database and generate the config."
-Then stop execution.
+1. Search Notion for the database: `Notion:notion-search` with `query: "Memory Store"`
+2. From the results, find an item that is a **database** (not a page) named "Memory Store".
+   Extract its `data_source_id` from the result.
+3. **If found** -> use this `data_source_id` for all subsequent operations.
+4. **If not found** -> no memories exist yet. Silently skip recall and proceed with the
+   conversation without injecting any memory context. Do NOT prompt the user to create anything.
 
 ## When to Trigger
 
@@ -60,11 +49,9 @@ Then stop execution.
 The goal is **relevance over coverage**. Analyze the conversation topic first, then make
 targeted searches. Different strategies apply depending on the estimated memory count.
 
-### Step 1: Read Configuration
+### Step 1: Discover Database
 
-Use the Read tool to read `~/.config/memory-store/config.json`.
-Parse the JSON and extract `notion.data_source_id` and `notion.database_url`.
-If the file is missing or invalid, instruct the user to run `/setup-memory-store` and stop.
+Search Notion for "Memory Store" database. If not found, silently skip all remaining steps.
 
 ### Step 2: Analyze Conversation Topic
 

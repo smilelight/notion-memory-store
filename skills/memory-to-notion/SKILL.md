@@ -15,36 +15,20 @@ This skill retrieves the user's past conversation history, analyzes it for valua
 content, decomposes conversations into **atomic memory entries**, and writes them as rows into
 the **Memory Store** Notion Database.
 
-## Configuration
+## Database Discovery
 
-Before executing any steps, read the configuration file to obtain Notion IDs:
+This skill uses a **zero-config convention**: the database is always named **"Memory Store"**.
+No configuration files or environment variables are needed.
 
-**Config path**: `~/.config/memory-store/config.json`
+**Discovery flow (execute at Step 1):**
 
-Use the Read tool to read `~/.config/memory-store/config.json`. The file contains:
-
-```json
-{
-  "notion": {
-    "data_source_id": "<data_source_id>",
-    "database_url": "<database_url>"
-  }
-}
-```
-
-Extract `data_source_id` and `database_url` from the config. Use these values wherever
-this document references `<data_source_id>` or `<database_url>`.
-
-**If the config file does not exist or is unreadable**, tell the user:
-"Memory Store is not configured yet. Please run `/setup-memory-store` first to create the
-database and generate the config."
-Then stop execution.
-
-## Target: Memory Store Database
-
-All memories are written into the **Memory Store** database using the IDs from config:
-- **Data Source ID**: `<data_source_id from config>`
-- **Database URL**: `<database_url from config>`
+1. Search Notion for the database: `Notion:notion-search` with `query: "Memory Store"`
+2. From the results, find an item that is a **database** (not a page) named "Memory Store".
+   Extract its `data_source_id` from the result.
+3. **If found** -> use this `data_source_id` for all subsequent operations.
+4. **If not found** -> ask the user: "No 'Memory Store' database found in your Notion workspace.
+   Which page should I create it under? Please provide a Notion page URL or page ID."
+   Then create the database (see Schema below) and use the newly created `data_source_id`.
 
 ### Schema
 
@@ -62,7 +46,33 @@ All memories are written into the **Memory Store** database using the IDs from c
 | Expiry      | Select      | Never / 30d / 90d / 1y                    |
 | Source Date | Date        | 原始对话发生时间                            |
 | Last Used   | Date        | 最后被召回使用的时间                         |
-| Memory ID   | Unique ID   | MEM-0001 格式，跨平台引用标识                |
+| Memory ID   | Rich Text   | MEM-0001 格式，跨平台引用标识                |
+
+### Database Creation DDL
+
+When creating the database, use `Notion:notion-create-database`:
+
+```json
+{
+  "parent_page_id": "<user-provided page ID>",
+  "title": "Memory Store",
+  "properties": [
+    {"name": "Title", "type": "title"},
+    {"name": "Category", "type": "select", "options": ["Fact", "Decision", "Preference", "Context", "Pattern", "Skill"]},
+    {"name": "Tags", "type": "multi_select", "options": ["Python", "Architecture", "Notion", "ClaudeCode", "Git", "Integration", "Workflow", "Preference", "DevTools"]},
+    {"name": "Content", "type": "rich_text"},
+    {"name": "Source", "type": "select", "options": ["Claude.ai", "ClaudeCode", "Manual", "OpenClaw", "Other"]},
+    {"name": "Confidence", "type": "select", "options": ["High", "Medium", "Low"]},
+    {"name": "Status", "type": "select", "options": ["Active", "Archived", "Contradicted"]},
+    {"name": "Scope", "type": "select", "options": ["Global", "Project"]},
+    {"name": "Project", "type": "rich_text"},
+    {"name": "Expiry", "type": "select", "options": ["Never", "30d", "90d", "1y"]},
+    {"name": "Source Date", "type": "date"},
+    {"name": "Last Used", "type": "date"},
+    {"name": "Memory ID", "type": "rich_text"}
+  ]
+}
+```
 
 ### Category 定义
 
@@ -75,11 +85,10 @@ All memories are written into the **Memory Store** database using the IDs from c
 
 ## Workflow
 
-### Step 1: Read Configuration
+### Step 1: Discover Database
 
-Use the Read tool to read `~/.config/memory-store/config.json`.
-Parse the JSON and extract `notion.data_source_id` and `notion.database_url`.
-If the file is missing or invalid, instruct the user to run `/setup-memory-store` and stop.
+Follow the Database Discovery section above. Obtain the `data_source_id` of the
+"Memory Store" database. If the database does not exist, create it.
 
 ### Step 2: Gather Conversation Content
 
@@ -228,9 +237,9 @@ New memories:
 **User**: 总结一下记忆
 
 **Claude**:
-1. Reads `~/.config/memory-store/config.json` to get `data_source_id`
+1. Searches Notion for "Memory Store" database, obtains `data_source_id`
 2. Calls `recent_chats(n=20)` to get recent conversations (or reviews current session in Claude Code)
 3. Searches Memory Store for existing entries to avoid duplicates
 4. Analyzes each conversation, decomposes into atomic memories
-5. Writes entries via `Notion:notion-create-pages` to the configured `data_source_id`
+5. Writes entries via `Notion:notion-create-pages` to the discovered `data_source_id`
 6. Reports: "Processed 5 conversations, generated 8 new memories, updated 1, skipped 2 low-value conversations."
