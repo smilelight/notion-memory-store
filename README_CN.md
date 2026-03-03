@@ -6,7 +6,7 @@
 
 - **零配置**: 通过数据库名称约定自动发现，无需配置任何 ID
 - **写入记忆**: 将对话分解为原子化、可搜索的记忆条目
-- **召回记忆**: 基于主题的智能召回，带相关性排序
+- **召回记忆**: 双路召回（结构化查询 + 语义搜索），带相关性排序
 - **跨平台**: 支持 Claude.ai、Claude Code 和 OpenClaw
 - **去重**: 自动检测重复和冲突的记忆
 - **自动建库**: 首次使用时自动创建数据库
@@ -70,21 +70,17 @@ claude plugin add ./notion-memory-store
 
 ## 数据库 Schema
 
-| 字段        | 类型         | 说明                                   |
+| 字段        | 类型        | 说明                                   |
 |-------------|-------------|----------------------------------------|
 | Title       | Title       | 记忆的一句话概括                         |
 | Category    | Select      | Fact / Decision / Preference / Context / Pattern / Skill |
-| Tags        | Multi-select| 可扩展的标签集                           |
 | Content     | Rich Text   | 记忆的详细内容                           |
 | Source      | Select      | Claude.ai / ClaudeCode / Manual / OpenClaw / Other |
-| Confidence  | Select      | High / Medium / Low                     |
 | Status      | Select      | Active / Archived / Contradicted        |
 | Scope       | Select      | Global / Project                        |
 | Project     | Rich Text   | 项目名 (Scope=Project 时填写)            |
 | Expiry      | Select      | Never / 30d / 90d / 1y                  |
 | Source Date | Date        | 原始对话发生时间                         |
-| Last Used   | Date        | 最后被召回使用的时间                      |
-| Memory ID   | Rich Text   | MEM-0001 格式标识符                      |
 
 ## 注意事项
 

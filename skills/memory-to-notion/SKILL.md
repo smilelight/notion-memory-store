@@ -18,77 +18,89 @@ the **Memory Store** Notion Database.
 ## Database Discovery
 
 This skill uses a **zero-config convention**: the database is always named **"Memory Store"**.
-No configuration files or environment variables are needed.
 
-**Discovery flow (execute at Step 1):**
+**Locate the database:**
 
-1. Search Notion for the database: `Notion:notion-search` with `query: "Memory Store"`
-2. From the results, find an item that is a **database** (not a page) named "Memory Store".
-   Extract its `data_source_id` from the result.
-3. **If found** -> use this `data_source_id` for all subsequent operations.
-4. **If not found** -> ask the user: "No 'Memory Store' database found in your Notion workspace.
-   Which page should I create it under? Please provide a Notion page URL or page ID."
-   Then create the database (see Schema below) and use the newly created `data_source_id`.
+```
+POST /v1/search
+{
+  "query": "Memory Store"
+}
+```
+
+From the results, find the item with `object: "data_source"` whose title is "Memory Store".
+Extract both:
+- `data_source_id` -- for querying (`POST /v1/data_sources/{id}/query`)
+- `database_id` -- for creating pages (`POST /v1/pages` with `parent: {"database_id": "..."}`)
+
+- **If found** -> use `data_source_id` for queries, `database_id` for page creation.
+- **If not found** -> ask the user: "No 'Memory Store' database found in your Notion workspace.
+  Which page should I create it under? Please provide a Notion page URL or page ID."
+  Then create the database (see Database Creation below).
 
 ### Schema
 
-| Property     | Type         | Description                              |
+| Property    | Type        | Description                              |
 |-------------|-------------|------------------------------------------|
 | Title       | Title       | 记忆的一句话概括                            |
 | Category    | Select      | Fact / Decision / Preference / Context / Pattern / Skill |
-| Tags        | Multi-select| Python, Architecture, Notion, ClaudeCode, Git, Integration, Workflow, Preference, DevTools (可扩展) |
 | Content     | Rich Text   | 记忆的详细内容                              |
 | Source      | Select      | Claude.ai / ClaudeCode / Manual / OpenClaw / Other |
-| Confidence  | Select      | High / Medium / Low                       |
 | Status      | Select      | Active / Archived / Contradicted          |
 | Scope       | Select      | Global / Project                          |
 | Project     | Rich Text   | 项目名（Scope=Project 时填写，Global 时留空） |
 | Expiry      | Select      | Never / 30d / 90d / 1y                    |
 | Source Date | Date        | 原始对话发生时间                            |
-| Last Used   | Date        | 最后被召回使用的时间                         |
-| Memory ID   | Rich Text   | MEM-0001 格式，跨平台引用标识                |
 
-### Database Creation DDL
+### Database Creation
 
-When creating the database, use `Notion:notion-create-database`:
-
-```json
-{
-  "parent_page_id": "<user-provided page ID>",
-  "title": "Memory Store",
-  "properties": [
-    {"name": "Title", "type": "title"},
-    {"name": "Category", "type": "select", "options": ["Fact", "Decision", "Preference", "Context", "Pattern", "Skill"]},
-    {"name": "Tags", "type": "multi_select", "options": ["Python", "Architecture", "Notion", "ClaudeCode", "Git", "Integration", "Workflow", "Preference", "DevTools"]},
-    {"name": "Content", "type": "rich_text"},
-    {"name": "Source", "type": "select", "options": ["Claude.ai", "ClaudeCode", "Manual", "OpenClaw", "Other"]},
-    {"name": "Confidence", "type": "select", "options": ["High", "Medium", "Low"]},
-    {"name": "Status", "type": "select", "options": ["Active", "Archived", "Contradicted"]},
-    {"name": "Scope", "type": "select", "options": ["Global", "Project"]},
-    {"name": "Project", "type": "rich_text"},
-    {"name": "Expiry", "type": "select", "options": ["Never", "30d", "90d", "1y"]},
-    {"name": "Source Date", "type": "date"},
-    {"name": "Last Used", "type": "date"},
-    {"name": "Memory ID", "type": "rich_text"}
-  ]
-}
-```
+When the database does not exist, create it under the user-specified parent page.
+Use the Notion create-database API with the schema above.
 
 ### Category 定义
 
-- **Fact**: 客观事实 -- 用户的技术栈、工具、环境、组织等
+- **Fact**: 客观事实 -- 用户的身份背景、技术栈、工具、环境、组织等
 - **Decision**: 架构决策、技术选型、方案选择
 - **Preference**: 用户偏好 -- 编码风格、工具配置、交互习惯
 - **Context**: 背景信息 -- 项目上下文、行业知识、见解观察
 - **Pattern**: 行为模式 -- 工作流程、重复出现的需求
 - **Skill**: 技能知识 -- 学到的命令、API、技巧
 
+## Platform Adaptation
+
+This skill describes operations using generic Notion REST API format.
+Each platform's AI should translate to its available tools using the **fixed mappings** below.
+Do NOT guess -- follow these mappings exactly.
+
+### Claude Code / Claude.ai (Notion MCP Tools)
+
+| Operation | SKILL.md Describes | Use MCP Tool | Key Parameters |
+|-----------|-------------------|--------------|----------------|
+| Discover database | `POST /v1/search` | `notion-search` | `query: "Memory Store"`, `content_search_mode: "workspace_search"` |
+| Get IDs | -- | `notion-fetch` | Fetch the database, extract `data_source_id` from `<data-source url="collection://...">` tag |
+| Dedup query | `POST /v1/data_sources/{id}/query` | **Not available** | Fall back to `notion-search` with `data_source_url` (see Step 3 note) |
+| Create page | `POST /v1/pages` | `notion-create-pages` | `parent: { "data_source_id": "..." }` |
+| Update page status | `PATCH /v1/pages/{id}` | `notion-update-page` | `command: "update_properties"` |
+| Create database | `POST /v1/databases` | `notion-create-database` | Uses SQL DDL syntax (see Database Creation) |
+| Fetch page | `GET /v1/pages/{id}` | `notion-fetch` | `id: "<page_id>"` |
+
+**Critical notes:**
+- Discovery MUST use `content_search_mode: "workspace_search"` (default `ai_search` mode may not return databases)
+- Structured query for dedup is **not available** in MCP. Use semantic search as fallback:
+  `notion-search` with `data_source_url: "collection://<data_source_id>"` and keywords from the candidate memory.
+  Then `notion-fetch` each result to compare full properties.
+- `notion-create-database` uses SQL DDL syntax, not JSON. See Database Creation section for the DDL.
+
+### OpenClaw / Direct API Access
+
+Use Notion REST API exactly as described in the workflow steps. All operations including
+structured query for dedup are fully supported.
+
 ## Workflow
 
 ### Step 1: Discover Database
 
-Follow the Database Discovery section above. Obtain the `data_source_id` of the
-"Memory Store" database. If the database does not exist, create it.
+Locate the "Memory Store" database. If not found, create it (see above).
 
 ### Step 2: Gather Conversation Content
 
@@ -108,12 +120,30 @@ Follow the Database Discovery section above. Obtain the `data_source_id` of the
 
 ### Step 3: Check Existing Memories (Dedup & Conflict Detection)
 
-Before writing new memories, search the Memory Store to avoid duplicates and detect conflicts.
+Before writing, query the database to check for duplicates and conflicts.
+For each candidate memory, search Title and Content:
 
-Use `Notion:notion-search` with `data_source_url: "collection://<data_source_id>"` to check for:
+```
+POST /v1/data_sources/{data_source_id}/query
+{
+  "filter": {
+    "or": [
+      { "property": "Title", "title": { "contains": "<keyword from new memory>" } },
+      { "property": "Content", "rich_text": { "contains": "<keyword from new memory>" } }
+    ]
+  },
+  "page_size": 10
+}
+```
+
+> **MCP platforms (Claude Code / Claude.ai):** Structured query is not available.
+> Use `notion-search` with `data_source_url: "collection://<data_source_id>"` and keywords
+> from the candidate memory as query. Then `notion-fetch` each result to compare properties.
+
+The query returns full page properties. Check for:
 1. **Duplicates**: Same fact already stored -> skip
-2. **Updates**: Same topic but information changed -> update existing entry's Content, set old info as Contradicted if needed
-3. **Conflicts**: New info contradicts existing memory -> create new entry as Active, mark old one as Contradicted
+2. **Updates**: Same topic but info changed -> update existing, mark old as Contradicted if needed
+3. **Conflicts**: New info contradicts existing -> create new as Active, mark old as Contradicted
 
 ### Step 4: Decompose into Atomic Memories
 
@@ -129,9 +159,10 @@ Each conversation may yield 0-N memory entries. The key principle is **one fact 
 
 A conversation about "setting up a new Python project" might yield:
 ```
-MEM: "用户使用 uv 而非 pip 管理 Python 依赖"        -> Category: Preference
-MEM: "项目 OpenClaw 使用 FastAPI + PostgreSQL 架构"  -> Category: Decision
-MEM: "用户偏好用 Ruff 做代码格式化和 lint"            -> Category: Preference
+"用户使用 uv 而非 pip 管理 Python 依赖"        -> Category: Preference
+"项目 OpenClaw 使用 FastAPI + PostgreSQL 架构"  -> Category: Decision
+"用户偏好用 Ruff 做代码格式化和 lint"            -> Category: Preference
+"用户是一名程序员"                              -> Category: Fact
 ```
 
 **What NOT to store:**
@@ -142,18 +173,14 @@ MEM: "用户偏好用 Ruff 做代码格式化和 lint"            -> Category: P
 
 ### Step 5: Write to Memory Store
 
-Use `Notion:notion-create-pages` with `parent.data_source_id = "<data_source_id>"`.
-
-**For each memory entry, set properties:**
+Create pages in the database. For each memory entry, set properties:
 
 ```json
 {
   "Title": "一句话概括",
   "Category": "Fact|Decision|Preference|Context|Pattern|Skill",
-  "Tags": "[\"Tag1\", \"Tag2\"]",
   "Content": "详细的记忆内容，足够让其他 AI 平台理解和使用",
   "Source": "Claude.ai|ClaudeCode|OpenClaw|Manual|Other",
-  "Confidence": "High|Medium|Low",
   "Status": "Active",
   "Scope": "Global|Project",
   "Project": "项目名（Scope=Project 时填写）",
@@ -164,82 +191,71 @@ Use `Notion:notion-create-pages` with `parent.data_source_id = "<data_source_id>
 ```
 
 **Scope guidelines:**
-- **Global**: 跨项目通用的记忆 -- 用户偏好、通用工具链、个人习惯、全局决策
-- **Project**: 特定项目的记忆 -- 项目架构、项目专属配置、项目内的技术决策
-- 当无法判断时，默认设为 Global（大多数偏好和事实是全局的）
-- Project 字段填项目名（如 "OpenClaw"、"skills"），与用户的项目目录名或仓库名一致
-
-**Confidence guidelines:**
-- **High**: User explicitly stated this, or it's a clear fact/decision
-- **Medium**: Inferred from conversation context, likely accurate
-- **Low**: Speculative or based on limited evidence
+- **Global**: 跨项目通用 -- 用户偏好、通用工具链、个人习惯、全局决策
+- **Project**: 特定项目 -- 项目架构、专属配置、项目内技术决策
+- 无法判断时，默认 Global
+- Project 字段填项目名（如 "OpenClaw"），与用户项目目录名或仓库名一致
 
 **Expiry guidelines:**
 - **Never**: Stable facts and preferences (name, tools, architecture)
-- **1y**: Knowledge that may become outdated (tool versions, project status)
-- **90d**: Contextual info with limited shelf life (current tasks, temporary decisions)
-- **30d**: Very transient info (this week's todos, temporary workarounds)
-
-**Tags:**
-- Use existing tags when possible (see schema above)
-- New tags are auto-created by Notion; use sparingly and consistently
-- Use English tag names for cross-platform compatibility
+- **1y**: May become outdated (tool versions, project status)
+- **90d**: Limited shelf life (current tasks, temporary decisions)
+- **30d**: Very transient (this week's todos, temporary workarounds)
 
 ### Step 6: Handle Conflicts
 
 If Step 3 found conflicting memories:
 
-1. Update the **old** memory's Status to "Contradicted" using `Notion:notion-update-page`:
-   ```json
-   {"command": "update_properties", "properties": {"Status": "Contradicted"}}
+1. Update the **old** memory's Status to "Contradicted":
+   ```
+   PATCH /v1/pages/{old_page_id}
+   { "properties": { "Status": { "select": { "name": "Contradicted" } } } }
    ```
 2. Create the **new** memory with Status "Active" (default)
-3. In the new memory's Content, optionally note what it supersedes: "(更新: 之前记录为 XX)"
+3. Optionally note in new Content what it supersedes: "(更新: 之前记录为 XX)"
 
 ### Step 7: Report Results
 
-After writing to Notion, provide the user with a summary:
-- How many conversations were processed
-- How many memories were created / updated / skipped
-- List of new entries with their MEM IDs and Titles
-- Any conflicts detected and how they were resolved
-- Any conversations that might need manual review
+After writing, provide the user with a summary:
+- Conversations processed
+- Memories created / updated / skipped
+- List of new entries with Titles and Categories
+- Conflicts detected and how resolved
 
-**Example report format:**
+**Example:**
 ```
 Memory archival complete
 
 Processed 8 conversations, generated 12 memories:
 - New: 10
-- Updated: 1 (MEM-0003 user location updated from Beijing to Shenzhen)
+- Updated: 1 (user location updated from Beijing to Shenzhen)
 - Skipped: 3 low-value conversations
 
 New memories:
-| MEM# | Title | Category |
-|------|-------|----------|
-| MEM-0007 | ... | Fact |
-| MEM-0008 | ... | Decision |
-...
+| Title | Category |
+|-------|----------|
+| 用户使用 uv 管理 Python 依赖 | Preference |
+| 项目 OpenClaw 使用 FastAPI 架构 | Decision |
 ```
 
 ## Important Notes
 
 - **Atomic entries**: One fact per row. Never dump a whole conversation summary into one entry.
-- **Language**: Write memory Title and Content in the same language as the original conversation (typically Chinese). Tags use English.
-- **Idempotent**: Always check for existing memories before writing. Running the skill twice on the same conversations should not create duplicates.
+- **Language**: Title and Content in the same language as the original conversation (typically Chinese).
+- **Idempotent**: Always check for existing memories before writing. Running twice should not create duplicates.
 - **Source accuracy**: 根据当前平台自动设置 Source（Claude.ai -> "Claude.ai"，Claude Code -> "ClaudeCode"，OpenClaw -> "OpenClaw"）。
-- **Preserve details**: Keep important code snippets, commands, config values, URLs verbatim in Content.
-- **User control**: This database is the user's open memory -- don't store anything the user wouldn't want to see. When in doubt, ask.
-- **Cross-platform ready**: Write Content so that any AI platform reading this memory can understand and use it without additional context.
+- **Preserve details**: Keep code snippets, commands, config values, URLs verbatim in Content.
+- **User control**: Don't store anything the user wouldn't want to see. When in doubt, ask.
+- **Cross-platform ready**: Write Content so any AI platform can understand and use it.
 
 ## Example Interaction
 
 **User**: 总结一下记忆
 
 **Claude**:
-1. Searches Notion for "Memory Store" database, obtains `data_source_id`
-2. Calls `recent_chats(n=20)` to get recent conversations (or reviews current session in Claude Code)
-3. Searches Memory Store for existing entries to avoid duplicates
-4. Analyzes each conversation, decomposes into atomic memories
-5. Writes entries via `Notion:notion-create-pages` to the discovered `data_source_id`
-6. Reports: "Processed 5 conversations, generated 8 new memories, updated 1, skipped 2 low-value conversations."
+1. Searches for "Memory Store" database, obtains `data_source_id` and `database_id`
+2. Reviews current session (Claude Code) or recent chats (Claude.ai)
+3. Queries database for existing entries to avoid duplicates
+4. Decomposes conversations into atomic memories
+5. Writes entries to the database
+6. Reports: "Processed 5 conversations, generated 8 new memories, updated 1, skipped 2."

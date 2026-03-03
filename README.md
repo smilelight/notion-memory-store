@@ -9,7 +9,7 @@ AI conversation memories across Claude.ai, Claude Code, and OpenClaw.
 
 - **Zero-config**: Database discovered by name convention, no IDs to configure
 - **Write memories**: Decompose conversations into atomic, searchable memory entries
-- **Recall memories**: Smart topic-driven recall with relevance ranking
+- **Recall memories**: Dual-path recall (structured query + semantic search) with relevance ranking
 - **Cross-platform**: Works with Claude.ai, Claude Code, and OpenClaw
 - **Deduplication**: Automatically detects duplicates and conflicting memories
 - **Auto-create**: Database created automatically on first use if not found
@@ -77,21 +77,17 @@ The recall skill triggers **proactively** when context would help. You can also 
 
 ## Database Schema
 
-| Property    | Type         | Description                            |
+| Property    | Type        | Description                            |
 |-------------|-------------|----------------------------------------|
 | Title       | Title       | One-line memory summary                |
 | Category    | Select      | Fact / Decision / Preference / Context / Pattern / Skill |
-| Tags        | Multi-select| Extensible tag set                     |
 | Content     | Rich Text   | Detailed memory content                |
 | Source      | Select      | Claude.ai / ClaudeCode / Manual / OpenClaw / Other |
-| Confidence  | Select      | High / Medium / Low                    |
 | Status      | Select      | Active / Archived / Contradicted       |
 | Scope       | Select      | Global / Project                       |
 | Project     | Rich Text   | Project name (when Scope = Project)    |
 | Expiry      | Select      | Never / 30d / 90d / 1y                |
 | Source Date | Date        | When the original conversation happened|
-| Last Used   | Date        | Last recall timestamp                  |
-| Memory ID   | Rich Text   | MEM-0001 format identifier             |
 
 ## Notes
 

@@ -16,16 +16,50 @@ for the current conversation.
 ## Database Discovery
 
 This skill uses a **zero-config convention**: the database is always named **"Memory Store"**.
-No configuration files or environment variables are needed.
 
-**Discovery flow (execute at Step 1):**
+**Step 1: Locate the database**
 
-1. Search Notion for the database: `Notion:notion-search` with `query: "Memory Store"`
-2. From the results, find an item that is a **database** (not a page) named "Memory Store".
-   Extract its `data_source_id` from the result.
-3. **If found** -> use this `data_source_id` for all subsequent operations.
-4. **If not found** -> no memories exist yet. Silently skip recall and proceed with the
-   conversation without injecting any memory context. Do NOT prompt the user to create anything.
+```
+POST /v1/search
+{
+  "query": "Memory Store"
+}
+```
+
+From the results, find the item with `object: "data_source"` whose title is "Memory Store".
+Extract both:
+- `data_source_id` -- for querying (`POST /v1/data_sources/{id}/query`)
+- `database_id` -- for reference
+
+- **If found** -> use `data_source_id` for all subsequent queries.
+- **If not found** -> silently skip recall. Do NOT prompt the user to create anything.
+
+## Platform Adaptation
+
+This skill describes operations using generic Notion REST API format.
+Each platform's AI should translate to its available tools using the **fixed mappings** below.
+Do NOT guess -- follow these mappings exactly.
+
+### Claude Code / Claude.ai (Notion MCP Tools)
+
+| Operation | SKILL.md Describes | Use MCP Tool | Key Parameters |
+|-----------|-------------------|--------------|----------------|
+| Discover database | `POST /v1/search` | `notion-search` | `query: "Memory Store"`, `content_search_mode: "workspace_search"` |
+| Get data_source_id | -- | `notion-fetch` | Fetch the database, extract from `<data-source url="collection://...">` tag |
+| Structured query | `POST /v1/data_sources/{id}/query` | **Not available** | Skip Path 1, use Path 2 only |
+| Semantic search in DB | `POST /v1/search` + data_source_url | `notion-search` | `data_source_url: "collection://<data_source_id>"` |
+| Fetch page details | `GET /v1/pages/{id}` | `notion-fetch` | `id: "<page_id>"` |
+
+**Critical notes:**
+- Discovery MUST use `content_search_mode: "workspace_search"` (default `ai_search` mode may not return databases)
+- Structured database query (Path 1) is **not available** in MCP. Dual-path recall degrades to **semantic search only**. This is acceptable for <500 memories.
+- Semantic search results lack full properties. Use `notion-fetch` per result to get Category, Status, Scope, etc.
+- Multiple `notion-fetch` calls can run **in parallel** within one response to minimize latency.
+
+### OpenClaw / Direct API Access
+
+Use Notion REST API exactly as described in the workflow steps. All operations including
+structured query (Path 1) are fully supported.
 
 ## When to Trigger
 
@@ -44,73 +78,110 @@ No configuration files or environment variables are needed.
 - Pure factual Q&A with no personal dimension ("Python 的 GIL 是什么")
 - User explicitly says they want a fresh start or generic advice
 
-## Recall Strategy: Topic-Driven Smart Recall
-
-The goal is **relevance over coverage**. Analyze the conversation topic first, then make
-targeted searches. Different strategies apply depending on the estimated memory count.
+## Recall Strategy
 
 ### Step 1: Discover Database
 
-Search Notion for "Memory Store" database. If not found, silently skip all remaining steps.
+See Database Discovery above. If not found, silently skip all remaining steps.
 
 ### Step 2: Analyze Conversation Topic
 
-From the user's first message (or the current conversation context), extract:
+From the user's message or conversation context, extract:
 
-1. **Primary keywords**: Specific nouns, technologies, tools, project names directly mentioned
-   - e.g., "Notion", "Claude Code", "记忆层", "Python"
-2. **Domain**: The broad topic area
-   - e.g., coding, architecture, workflow, DevOps, personal, writing
-3. **Intent**: What the user is trying to do
-   - e.g., build, debug, decide, learn, configure, discuss
-4. **Current project** (if in Claude Code): Detect from the working directory or conversation context
+1. **Keywords**: Specific nouns, technologies, tools, project names
+   - e.g., "Notion", "Claude Code", "orchestrator", "Python"
+2. **Semantic query**: A natural language summary of the user's intent
+   - e.g., "CI 配置偏好", "Python 项目架构决策"
+3. **Current project** (if in Claude Code): Detect from the working directory
    - e.g., "OpenClaw", "skills", "claude_world"
 
-### Step 3: Tiered Search Strategy
+### Step 3: Dual-Path Recall
 
-Run **2 searches** (not 3-5), designed to balance precision with coverage:
+Use **two parallel paths** to maximize recall coverage, then merge results.
 
-**Search 1 -- Topic Search (precision)**:
-Use the primary keywords extracted in Step 2. This is the most important search.
-```
-query: "<primary keywords from user's message>"
-data_source_url: "collection://<data_source_id>"
-```
+**Path 1 -- Structured query** (precision, returns full properties):
 
-**Search 2 -- Broad Preference & Fact Sweep (coverage)**:
-Always search for the user's core preferences and facts. These are useful in almost
-any conversation, even if not directly related to the current topic.
-```
-query: "用户偏好 工具 习惯 决策"
-data_source_url: "collection://<data_source_id>"
-```
+Query the data source with keyword filters on Title, Content, and Project.
 
-**Search 3 -- (Optional) Domain Expansion**:
-Only if Search 1 returns fewer than 3 results AND the topic is clearly specific:
 ```
-query: "<domain + broader related terms>"
-data_source_url: "collection://<data_source_id>"
+POST /v1/data_sources/{data_source_id}/query
+{
+  "filter": {
+    "or": [
+      { "property": "Title", "title": { "contains": "<keyword>" } },
+      { "property": "Content", "rich_text": { "contains": "<keyword>" } },
+      { "property": "Project", "rich_text": { "contains": "<keyword>" } }
+    ]
+  },
+  "page_size": 50
+}
 ```
 
-> **Why 2 searches instead of 5?**
-> With <50 memories, Notion's semantic search is good enough that 2 well-crafted queries
-> cover most relevant results. With 50-100+ memories, precision matters more than
-> breadth -- noise from wide searches degrades context quality. Adding a 3rd search
-> is reserved for when the first two don't return enough.
+For multiple keywords (e.g., "Notion" and "MCP"):
 
-### Step 4: Filter
+```json
+{
+  "filter": {
+    "or": [
+      { "property": "Title", "title": { "contains": "Notion" } },
+      { "property": "Content", "rich_text": { "contains": "Notion" } },
+      { "property": "Title", "title": { "contains": "MCP" } },
+      { "property": "Content", "rich_text": { "contains": "MCP" } }
+    ]
+  }
+}
+```
 
-After collecting results, apply these filters:
+> **MCP platforms (Claude Code / Claude.ai):** Path 1 is not available (no structured query tool).
+> Skip directly to Path 2. The recall becomes single-path semantic search.
+
+**Path 2 -- Semantic search** (coverage, catches what keywords miss):
+
+Search within the Memory Store using the semantic query from Step 2.
+
+```
+POST /v1/search
+{
+  "query": "<semantic query from Step 2>",
+  "data_source_url": "collection://<data_source_id>"
+}
+```
+
+This catches memories that are semantically related but don't contain the exact keywords.
+For example, searching "CI 配置" might find "GitHub Actions workflow 配置偏好" even though
+it doesn't contain the word "CI".
+
+> **Why dual-path?**
+> Structured query is precise but only matches exact keywords -- it misses semantically
+> related memories. Semantic search understands intent but returns incomplete properties
+> (only id/title/highlight). Combining both gives precision + coverage.
+
+### Step 4: Merge and Enrich
+
+1. **Merge**: Combine results from both paths, deduplicate by page id.
+2. **Enrich**: Structured query results already have full properties. For memories found
+   **only** by semantic search, fetch their full properties:
+   ```
+   GET /v1/pages/{page_id}
+   ```
+   (Only fetch the delta -- skip pages already in structured query results.)
+
+> **MCP platforms:** Since only Path 2 is available, ALL results need enrichment via `notion-fetch`.
+> Fetch all results in parallel to minimize latency.
+
+### Step 5: Filter
+
+Apply these filters on the merged results:
 
 **Scope filter (most important for Claude Code):**
-- Always include: Scope = Global memories (universal preferences, facts)
-- Include: Scope = Project memories where Project matches the current project name
-- Exclude: Scope = Project memories for OTHER projects (these are noise)
-- Include: memories with no Scope set (legacy data, treat as Global)
+- Always include: Scope = Global
+- Include: Scope = Project where Project matches current project name
+- Exclude: Scope = Project for OTHER projects
+- Include: no Scope set (legacy data, treat as Global)
 
 **Status filter:**
-- **Status = Contradicted**: Superseded memories, always skip
-- **Status = Archived**: Skip unless user explicitly asks for old memories
+- **Contradicted**: Always skip
+- **Archived**: Skip unless user explicitly asks
 
 **Expiry filter:**
 - 30d: Source Date + 30 days < today -> skip
@@ -118,35 +189,19 @@ After collecting results, apply these filters:
 - 1y: Source Date + 1 year < today -> skip
 - Never: Always include
 
-For speed: if total results are <10, skip individual page fetches and include
-everything (Contradicted memories are rare). Only do detailed filtering when
-results exceed 10.
-
-### Step 5: Deduplicate and Rank
-
-Merge results from all searches.
+### Step 6: Rank
 
 **Priority scoring:**
-1. **Multi-hit bonus**: Same memory found in both searches -> highest relevance
+1. **Dual-path bonus**: Found by both structured query and semantic search -> highest relevance
 2. **Topic match**: Directly relates to user's current question/task
 3. **Category weight**: Preference > Fact > Decision > Pattern > Skill > Context
-4. **Confidence**: High > Medium > Low
-5. **Recency**: Newer Source Date > Older
+4. **Recency**: Newer Source Date > Older
 
 **Injection limit: 10-15 memories maximum.**
 
-If more than 15 qualify:
-- Always include: all Preference and Decision memories that scored high
-- Include: top-ranked Fact and Skill memories
-- Defer: Context and Pattern memories with lower relevance scores
-- Briefly note that more memories exist if the user wants them
+### Step 7: Inject as Context
 
-### Step 6: Inject as Context
-
-Format recalled memories as a compact context block. Don't dump raw database rows --
-synthesize into a readable briefing grouped by Category.
-
-**Format:**
+Format recalled memories as a compact context block grouped by Category:
 
 ```
 Recalled context from Memory Store:
@@ -156,75 +211,35 @@ Recalled context from Memory Store:
 - ...
 
 [Facts]
+- 用户是程序员，主要使用 Python
 - Notion 工作区已连通，集成方式为 MCP
 - ...
 
 [Decisions]
 - Memory Store 采用 Notion Database 结构
 - ...
-
-[Skills]
-- Claude Code /simplify: 自动代码审查，三个并行代理
-- ...
 ```
 
 Rules:
-- Group by Category
-- Keep each entry to 1-2 lines
+- Group by Category, keep each entry 1-2 lines
 - Include key details (IDs, commands, URLs) verbatim
-- Only include Categories that have recalled entries (don't show empty groups)
-- If a memory is clearly irrelevant to the current conversation despite being
-  returned by search, silently drop it -- don't inject noise
-
-### Step 7: Update "Last Used" (Low Priority)
-
-After the conversation, update `Last Used` on memories that actually influenced
-the response. Use `Notion:notion-update-page`:
-
-```json
-{
-  "command": "update_properties",
-  "page_id": "<memory_page_id>",
-  "properties": {
-    "date:Last Used:start": "YYYY-MM-DD",
-    "date:Last Used:is_datetime": 0
-  }
-}
-```
-
-This is **low priority** -- do it at the end of the conversation or skip if it would
-slow down the interaction. Its purpose is to enable future "least recently used" cleanup.
+- Only show Categories with entries
+- Silently drop irrelevant memories
 
 ## Handling Edge Cases
 
-**No results:**
-- Don't force it. Just proceed without memories.
-- Don't announce "Memory Store 中没有找到相关记忆" unless user explicitly asked for recall.
+**No results**: Proceed without memories. Don't announce unless user explicitly asked.
 
-**Too many results (>15):**
-- Apply the ranking strictly, inject top 10-15 only.
-- Mention "Memory Store 中还有更多记忆可供参考" at the end of context block.
+**Too many (>15)**: Rank strictly, inject top 10-15. Note more are available.
 
-**Stale or wrong memories:**
-- If a recalled memory contradicts the current conversation, flag it:
-  "我注意到 Memory Store 里记录了 X，但你现在说的是 Y，要我更新吗？"
-- This turns recall into a self-healing loop.
+**Stale/wrong memories**: Flag contradictions and offer to update.
 
-**User asks "你怎么知道的？":**
-- Explain it came from Memory Store and offer to show or edit the entry.
+**"你怎么知道的？"**: Explain it came from Memory Store, offer to show/edit.
 
 ## Important Notes
 
-- **Speed over perfection**: 2 fast searches, merge, go. Don't over-optimize.
 - **Silent injection**: Don't say "我正在搜索记忆库..." unless user explicitly asked.
-  Just inject context and use it naturally in responses.
-- **Relevance filter is key**: The biggest improvement over the old approach is
-  NOT injecting irrelevant memories. When in doubt about relevance, leave it out --
-  the user can always ask "你还记得 X 吗？" to trigger targeted recall.
-- **Scope awareness**: In Claude Code, always detect the current project and filter
-  memories accordingly. Global memories are always relevant; Project memories are only
-  relevant when working in that specific project.
-- **Cross-platform memories**: The Memory Store may contain entries from Claude.ai,
-  Claude Code, OpenClaw, etc. Treat all sources equally.
-- **Read-only**: This skill only reads. Writing/updating is handled by memory-to-notion.
-  The only write is the optional "Last Used" timestamp.
+- **Relevance first**: When in doubt, leave it out.
+- **Scope awareness**: In Claude Code, detect current project and filter accordingly.
+- **Cross-platform**: Treat entries from all sources (Claude.ai, Claude Code, OpenClaw) equally.
+- **Read-only**: This skill only reads from the database, never writes.
