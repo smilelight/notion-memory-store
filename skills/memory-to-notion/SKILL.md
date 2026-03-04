@@ -93,18 +93,20 @@ Do NOT guess -- follow these mappings exactly.
 
 ### OpenClaw
 
-OpenClaw accesses Notion through its built-in **"notion" skill** (a separate platform skill).
-All Notion operations in this workflow should be executed by invoking the platform's Notion skill.
+OpenClaw accesses Notion through a separately installed **"notion" skill**
+([clawhub.ai/steipete/notion](https://clawhub.ai/steipete/notion)).
+This skill must be installed before using memory-to-notion.
 
-- Use the Notion skill's search/query capabilities for database discovery and dedup
-- Use the Notion skill's page creation capabilities for writing memories
-- Use the Notion skill's page update capabilities for conflict handling (marking old memories as Contradicted)
-- Use the Notion skill's database creation capabilities if Memory Store needs to be created
-- All operations including structured query for dedup are fully supported via the Notion skill's API access
+When executing, first read the notion skill's SKILL.md to learn the Notion API access patterns
+(API key setup, curl commands, endpoints). Then follow this workflow using those patterns.
+
+- All operations described in this skill (search, query, create page, update page, create database)
+  map directly to the notion skill's REST API patterns
+- All operations including structured query for dedup are fully supported
 
 **Important**: This skill (memory-to-notion) is a **workflow skill** that depends on Notion
 connectivity. It does NOT provide Notion access itself -- it relies on the platform's Notion
-integration (MCP tools on Claude Code/Claude.ai, Notion skill on OpenClaw).
+integration (MCP tools on Claude Code/Claude.ai, notion skill on OpenClaw).
 
 ## Workflow
 

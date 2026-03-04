@@ -28,7 +28,7 @@
 - 将 Notion 集成连接到你的 AI 平台:
   - **Claude Code**: Notion MCP 服务器 (通过 `.mcp.json` 或 Claude Code 设置)
   - **Claude.ai**: Notion Connector (设置 -> Connectors)
-  - **OpenClaw**: 参照平台文档连接 Notion
+  - **OpenClaw**: 安装 [notion skill](https://clawhub.ai/steipete/notion) (提供 Notion API 访问能力)
 
 ## 安装
 
@@ -50,7 +50,8 @@ claude plugin add ./notion-memory-store
 
 ### OpenClaw / 其他平台
 
-下载 SKILL.md 文件，按照你所在平台的 skill 导入方式导入即可。
+1. 安装 [notion skill](https://clawhub.ai/steipete/notion) (提供 Notion API 访问能力)
+2. 下载 SKILL.md 文件，按照你所在平台的 skill 导入方式导入即可
 
 ## 使用方法
 

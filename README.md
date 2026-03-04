@@ -35,7 +35,7 @@ no IDs to copy-paste.
 - Notion integration connected to your AI platform:
   - **Claude Code**: Notion MCP server (via `.mcp.json` or Claude Code settings)
   - **Claude.ai**: Notion Connector (Settings -> Connectors)
-  - **OpenClaw**: Notion integration per platform docs
+  - **OpenClaw**: Install the [notion skill](https://clawhub.ai/steipete/notion) (provides Notion API access)
 
 ## Installation
 
@@ -57,7 +57,8 @@ claude plugin add ./notion-memory-store
 
 ### OpenClaw / Other Platforms
 
-Download the SKILL.md files and import according to your platform's skill mechanism.
+1. Install the [notion skill](https://clawhub.ai/steipete/notion) (provides Notion API access)
+2. Download the SKILL.md files and import according to your platform's skill mechanism
 
 ## Usage
 
