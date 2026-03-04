@@ -56,10 +56,18 @@ Do NOT guess -- follow these mappings exactly.
 - Semantic search results lack full properties. Use `notion-fetch` per result to get Category, Status, Scope, etc.
 - Multiple `notion-fetch` calls can run **in parallel** within one response to minimize latency.
 
-### OpenClaw / Direct API Access
+### OpenClaw
 
-Use Notion REST API exactly as described in the workflow steps. All operations including
-structured query (Path 1) are fully supported.
+OpenClaw accesses Notion through its built-in **"notion" skill** (a separate platform skill).
+All Notion operations in this workflow should be executed by invoking the platform's Notion skill.
+
+- Use the Notion skill's search/query capabilities for database discovery and recall
+- Use the Notion skill's page read capabilities for fetching memory details
+- All operations including structured query (Path 1) are fully supported via the Notion skill's API access
+
+**Important**: This skill (recall-from-notion) is a **workflow skill** that depends on Notion
+connectivity. It does NOT provide Notion access itself -- it relies on the platform's Notion
+integration (MCP tools on Claude Code/Claude.ai, Notion skill on OpenClaw).
 
 ## When to Trigger
 

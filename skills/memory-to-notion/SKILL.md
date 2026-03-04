@@ -91,10 +91,20 @@ Do NOT guess -- follow these mappings exactly.
   Then `notion-fetch` each result to compare full properties.
 - `notion-create-database` uses SQL DDL syntax, not JSON. See Database Creation section for the DDL.
 
-### OpenClaw / Direct API Access
+### OpenClaw
 
-Use Notion REST API exactly as described in the workflow steps. All operations including
-structured query for dedup are fully supported.
+OpenClaw accesses Notion through its built-in **"notion" skill** (a separate platform skill).
+All Notion operations in this workflow should be executed by invoking the platform's Notion skill.
+
+- Use the Notion skill's search/query capabilities for database discovery and dedup
+- Use the Notion skill's page creation capabilities for writing memories
+- Use the Notion skill's page update capabilities for conflict handling (marking old memories as Contradicted)
+- Use the Notion skill's database creation capabilities if Memory Store needs to be created
+- All operations including structured query for dedup are fully supported via the Notion skill's API access
+
+**Important**: This skill (memory-to-notion) is a **workflow skill** that depends on Notion
+connectivity. It does NOT provide Notion access itself -- it relies on the platform's Notion
+integration (MCP tools on Claude Code/Claude.ai, Notion skill on OpenClaw).
 
 ## Workflow
 
