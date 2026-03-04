@@ -2,9 +2,9 @@
 name: memory-to-notion
 description: >
   Summarize and archive conversation memories to Notion. Trigger when the user says
-  "总结一下记忆", "总结记忆", "summarize memory", "归档对话", "整理记忆", "同步记忆到Notion",
-  "把记忆写入Notion", "回顾一下最近聊了什么并记录下来", or any variation asking to review,
-  summarize, archive, or export conversation history / chat memories to Notion.
+  "summarize memory", "archive conversation", "save memories", "sync memories to Notion",
+  "write memories to Notion", "review and record what we discussed", or any variation asking
+  to review, summarize, archive, or export conversation history / chat memories to Notion.
 disable-model-invocation: true
 user-invocable: true
 ---
@@ -40,31 +40,31 @@ Extract both:
 
 ### Schema
 
-| Property    | Type        | Description                              |
-|-------------|-------------|------------------------------------------|
-| Title       | Title       | 记忆的一句话概括                            |
-| Category    | Select      | Fact / Decision / Preference / Context / Pattern / Skill |
-| Content     | Rich Text   | 记忆的详细内容                              |
-| Source      | Select      | Claude.ai / ClaudeCode / Manual / OpenClaw / Other |
-| Status      | Select      | Active / Archived / Contradicted          |
-| Scope       | Select      | Global / Project                          |
-| Project     | Rich Text   | 项目名（Scope=Project 时填写，Global 时留空） |
-| Expiry      | Select      | Never / 30d / 90d / 1y                    |
-| Source Date | Date        | 原始对话发生时间                            |
+| Property    | Type        | Description                                             |
+|-------------|-------------|---------------------------------------------------------|
+| Title       | Title       | One-line memory summary (searchable)                    |
+| Category    | Select      | Fact / Decision / Preference / Context / Pattern / Skill|
+| Content     | Rich Text   | Detailed memory content                                 |
+| Source      | Select      | Claude.ai / ClaudeCode / Manual / OpenClaw / Other      |
+| Status      | Select      | Active / Archived / Contradicted                        |
+| Scope       | Select      | Global / Project                                        |
+| Project     | Rich Text   | Project name (set when Scope=Project, leave empty for Global) |
+| Expiry      | Select      | Never / 30d / 90d / 1y                                  |
+| Source Date | Date        | When the original conversation happened                 |
 
 ### Database Creation
 
 When the database does not exist, create it under the user-specified parent page.
 Use the Notion create-database API with the schema above.
 
-### Category 定义
+### Category Definitions
 
-- **Fact**: 客观事实 -- 用户的身份背景、技术栈、工具、环境、组织等
-- **Decision**: 架构决策、技术选型、方案选择
-- **Preference**: 用户偏好 -- 编码风格、工具配置、交互习惯
-- **Context**: 背景信息 -- 项目上下文、行业知识、见解观察
-- **Pattern**: 行为模式 -- 工作流程、重复出现的需求
-- **Skill**: 技能知识 -- 学到的命令、API、技巧
+- **Fact**: Objective facts -- user's identity, background, tech stack, tools, environment, organization
+- **Decision**: Architecture decisions, technology choices, approach selections
+- **Preference**: User preferences -- coding style, tool configuration, interaction habits
+- **Context**: Background information -- project context, domain knowledge, observations
+- **Pattern**: Behavioral patterns -- workflows, recurring needs
+- **Skill**: Skills and knowledge -- commands, APIs, techniques learned
 
 ## Platform Adaptation
 
@@ -104,19 +104,19 @@ Locate the "Memory Store" database. If not found, create it (see above).
 
 ### Step 2: Gather Conversation Content
 
-根据当前平台选择不同策略：
+Choose a strategy based on the current platform:
 
-**Claude.ai**（有历史对话 API）：
-- 使用 `recent_chats(n=20)` 获取最近对话
-- 可用 `after`/`before` 参数筛选时间范围
-- 可用 `conversation_search` 按关键词检索
-- 综合归档时可多轮分页（最多 ~5 轮）
+**Claude.ai** (has conversation history API):
+- Use `recent_chats(n=20)` to fetch recent conversations
+- Use `after`/`before` parameters to filter by time range
+- Use `conversation_search` for keyword-based retrieval
+- For comprehensive archival, paginate up to ~5 rounds
 
-**Claude Code**（仅当前会话）：
-- 从当前对话上下文中提取有价值的信息
-- 用户在对话中说"记下来"/"总结记忆"时触发
-- 回顾本次会话中产生的事实、决策、偏好等
-- 无法访问历史会话，只处理当前对话内容
+**Claude Code** (current session only):
+- Extract valuable information from the current conversation context
+- Triggered when the user says "summarize memory" or similar
+- Review facts, decisions, preferences produced in this session
+- Cannot access past sessions -- only processes current conversation
 
 ### Step 3: Check Existing Memories (Dedup & Conflict Detection)
 
@@ -152,21 +152,21 @@ Each conversation may yield 0-N memory entries. The key principle is **one fact 
 **Decomposition rules:**
 - Each memory should be self-contained and independently meaningful
 - Don't store entire conversation summaries -- extract individual facts, decisions, preferences
-- Title should be a single declarative sentence (可以搜索的)
+- Title should be a single declarative sentence (searchable)
 - Content provides enough detail to be useful without the original conversation
 
 **Examples of good decomposition:**
 
 A conversation about "setting up a new Python project" might yield:
 ```
-"用户使用 uv 而非 pip 管理 Python 依赖"        -> Category: Preference
-"项目 OpenClaw 使用 FastAPI + PostgreSQL 架构"  -> Category: Decision
-"用户偏好用 Ruff 做代码格式化和 lint"            -> Category: Preference
-"用户是一名程序员"                              -> Category: Fact
+"User prefers uv over pip for Python dependency management"  -> Category: Preference
+"Project OpenClaw uses FastAPI + PostgreSQL architecture"     -> Category: Decision
+"User prefers Ruff for code formatting and linting"           -> Category: Preference
+"User is a programmer"                                        -> Category: Fact
 ```
 
 **What NOT to store:**
-- Transient Q&A that can be easily re-searched ("Python 的 GIL 是什么")
+- Transient Q&A that can be easily re-searched ("What is Python's GIL")
 - Pleasantries and small talk
 - Failed attempts with no useful outcome
 - Information the user explicitly asked to forget
@@ -177,13 +177,13 @@ Create pages in the database. For each memory entry, set properties:
 
 ```json
 {
-  "Title": "一句话概括",
+  "Title": "One-line summary",
   "Category": "Fact|Decision|Preference|Context|Pattern|Skill",
-  "Content": "详细的记忆内容，足够让其他 AI 平台理解和使用",
+  "Content": "Detailed memory content, sufficient for any AI platform to understand and use",
   "Source": "Claude.ai|ClaudeCode|OpenClaw|Manual|Other",
   "Status": "Active",
   "Scope": "Global|Project",
-  "Project": "项目名（Scope=Project 时填写）",
+  "Project": "Project name (set when Scope=Project)",
   "Expiry": "Never|30d|90d|1y",
   "date:Source Date:start": "YYYY-MM-DD",
   "date:Source Date:is_datetime": 0
@@ -191,10 +191,10 @@ Create pages in the database. For each memory entry, set properties:
 ```
 
 **Scope guidelines:**
-- **Global**: 跨项目通用 -- 用户偏好、通用工具链、个人习惯、全局决策
-- **Project**: 特定项目 -- 项目架构、专属配置、项目内技术决策
-- 无法判断时，默认 Global
-- Project 字段填项目名（如 "OpenClaw"），与用户项目目录名或仓库名一致
+- **Global**: Cross-project universal -- user preferences, general toolchain, personal habits, global decisions
+- **Project**: Project-specific -- project architecture, dedicated config, project-scoped technical decisions
+- When uncertain, default to Global
+- Project field should match the user's project directory name or repository name (e.g., "OpenClaw")
 
 **Expiry guidelines:**
 - **Never**: Stable facts and preferences (name, tools, architecture)
@@ -212,7 +212,7 @@ If Step 3 found conflicting memories:
    { "properties": { "Status": { "select": { "name": "Contradicted" } } } }
    ```
 2. Create the **new** memory with Status "Active" (default)
-3. Optionally note in new Content what it supersedes: "(更新: 之前记录为 XX)"
+3. Optionally note in new Content what it supersedes: "(Updated: previously recorded as XX)"
 
 ### Step 7: Report Results
 
@@ -234,23 +234,23 @@ Processed 8 conversations, generated 12 memories:
 New memories:
 | Title | Category |
 |-------|----------|
-| 用户使用 uv 管理 Python 依赖 | Preference |
-| 项目 OpenClaw 使用 FastAPI 架构 | Decision |
+| User prefers uv for Python dependency management | Preference |
+| Project OpenClaw uses FastAPI architecture | Decision |
 ```
 
 ## Important Notes
 
 - **Atomic entries**: One fact per row. Never dump a whole conversation summary into one entry.
-- **Language**: Title and Content in the same language as the original conversation (typically Chinese).
+- **Language**: Title and Content should be written in the user's primary language (the language they most frequently use in conversations). This ensures memories are searchable and readable in the language the user naturally uses. Do NOT force English -- match the user's language.
 - **Idempotent**: Always check for existing memories before writing. Running twice should not create duplicates.
-- **Source accuracy**: 根据当前平台自动设置 Source（Claude.ai -> "Claude.ai"，Claude Code -> "ClaudeCode"，OpenClaw -> "OpenClaw"）。
+- **Source accuracy**: Auto-set Source based on current platform (Claude.ai -> "Claude.ai", Claude Code -> "ClaudeCode", OpenClaw -> "OpenClaw").
 - **Preserve details**: Keep code snippets, commands, config values, URLs verbatim in Content.
 - **User control**: Don't store anything the user wouldn't want to see. When in doubt, ask.
 - **Cross-platform ready**: Write Content so any AI platform can understand and use it.
 
 ## Example Interaction
 
-**User**: 总结一下记忆
+**User**: summarize memory
 
 **Claude**:
 1. Searches for "Memory Store" database, obtains `data_source_id` and `database_id`
