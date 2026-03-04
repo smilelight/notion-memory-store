@@ -89,6 +89,8 @@ Do NOT guess -- follow these mappings exactly.
 - Structured query for dedup is **not available** in MCP. Use semantic search as fallback:
   `notion-search` with `data_source_url: "collection://<data_source_id>"` and keywords from the candidate memory.
   Then `notion-fetch` each result to compare full properties.
+- **Do NOT parallel-call** multiple `notion-search` against the same `data_source_url` -- MCP will error.
+  When deduping multiple candidate memories, run searches sequentially. Deduplicate results by page id before fetching.
 - `notion-create-database` uses SQL DDL syntax, not JSON. See Database Creation section for the DDL.
 
 ### OpenClaw
@@ -150,7 +152,8 @@ POST /v1/data_sources/{data_source_id}/query
 
 > **MCP platforms (Claude Code / Claude.ai):** Structured query is not available.
 > Use `notion-search` with `data_source_url: "collection://<data_source_id>"` and keywords
-> from the candidate memory as query. Then `notion-fetch` each result to compare properties.
+> from the candidate memory as query. Run dedup searches **sequentially** (not in parallel).
+> Deduplicate results by page id across searches, then `notion-fetch` only unique results to compare properties.
 
 The query returns full page properties. Check for:
 1. **Duplicates**: Same fact already stored -> skip
