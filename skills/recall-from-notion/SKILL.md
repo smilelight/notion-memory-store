@@ -53,6 +53,7 @@ Do NOT guess -- follow these mappings exactly.
 **Critical notes:**
 - Discovery MUST use `content_search_mode: "workspace_search"` (default `ai_search` mode may not return databases)
 - Structured database query (Path 1) is **not available** in MCP. Dual-path recall degrades to **semantic search only**. This is acceptable for <500 memories.
+- **Do NOT parallel-call** multiple `notion-search` against the same `data_source_url` -- MCP will error. Run searches sequentially, or combine into one query.
 - Semantic search results lack full properties. Use `notion-fetch` per result to get Category, Status, Scope, etc.
 - Multiple `notion-fetch` calls can run **in parallel** within one response to minimize latency.
 
@@ -106,6 +107,13 @@ From the user's message or conversation context, extract:
    - e.g., "CI configuration preferences", "Python project architecture decisions"
 3. **Current project** (if in Claude Code): Detect from the working directory
    - e.g., "OpenClaw", "skills", "claude_world"
+
+**Search strategy guidance:**
+- Prefer **one well-crafted natural language query** over multiple keyword-stuffed searches.
+  e.g., "user background preferences and development tools" is better than 3 separate searches.
+- For broad queries ("what do you know about me", "my basic info"), a single general query suffices.
+- Only add a second search if the first round clearly missed a specific topic dimension.
+- On MCP platforms, searches against the same `data_source_url` MUST be sequential (see Critical notes).
 
 ### Step 3: Dual-Path Recall
 
@@ -179,7 +187,8 @@ even though it doesn't contain the word "CI".
    (Only fetch the delta -- skip pages already in structured query results.)
 
 > **MCP platforms:** Since only Path 2 is available, ALL results need enrichment via `notion-fetch`.
-> Fetch all results in parallel to minimize latency.
+> If multiple searches were performed, **deduplicate by page id first**, then fetch only unique results.
+> Multiple `notion-fetch` calls can run in parallel to minimize latency.
 
 ### Step 5: Filter
 
